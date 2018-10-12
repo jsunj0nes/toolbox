@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+if [[ -e ~/inventory/hosts-master ]]; then
+  file=~/inventory/hosts-master
+else
+  file=~/inventory/hosts-controller
+fi
+
+< $file xargs --max-args=1 --max-procs=32 $@

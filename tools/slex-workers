@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+user=$(grep -m 1 -oPe '[.\w]+(?=-sfmc-docker)' /etc/mtab)
+
+if [[ -e ~/inventory/hosts-node ]]; then
+  file=~/inventory/hosts-node
+else
+  file=~/inventory/hosts-worker
+fi
+
+slex --hosts $file --user $user --agent $@

@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+< ~/inventory/hosts-all xargs --max-args=1 --max-procs=32 $@

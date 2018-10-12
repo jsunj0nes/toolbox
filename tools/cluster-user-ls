@@ -1,0 +1,33 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+declare -a nodes
+account=$(grep -m 1 -oPe '[.\w]+(?=-sfmc-docker)' /etc/mtab)
+
+#get cmd line arguments
+  while [[ "$#" -gt 0 ]]; do case $1 in
+    -u|--user) user="$2"; shift;;
+    -n|--nodes) knodes="$2"; shift;;
+    *) echo "Unknown parameter passed: $1"; exit 1;;
+  esac; shift; done
+
+if [ -z "${user+xxx}" ]; then user="all"; fi
+if [ -z "${knodes+xxx}" ]; then knodes="all"; fi
+
+nodelist=$(args-"$knodes")
+nodes=("$nodelist")
+
+#Set command to run on host
+  if [ "$user" = "all" ]; then
+    cmd="ls /home"
+  else
+    cmd="sudo ls /home/$user/.ssh/authorized_keys.d/"
+  fi
+
+#Loop through nodes and list user(s)
+  for n in ${nodes[@]}
+    do
+      printf "\n$n\n"
+      ssh $account@"$n" "$cmd" || true
+  done

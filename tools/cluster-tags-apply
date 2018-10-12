@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+cluster_name=$(jyparser /media/root/etc/kubernetes/kubeconfig get -r ".clusters[0].name")
+
+while read -r name; do
+  server_suffix=$(echo "$name" | grep -oPe '\d+$')
+  server_number=$((10#$server_suffix))
+  if [ $((server_number%2)) -eq 0 ]; then zone="even"; else zone="odd"; fi
+  kubectl label --overwrite "nodes/$name" "failure-domain.beta.kubernetes.io/zone=$zone"
+  #kubectl label --overwrite "nodes/$name" "failure-domain.beta.kubernetes.io/region=$cluster_name"  #commenting out since this is done in terraform 
+done <<< "$(args-all -i basename {} ".$(hostname -d)")"

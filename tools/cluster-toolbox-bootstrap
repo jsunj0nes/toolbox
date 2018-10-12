@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+slex-all 'bash -c "$(curl -fsSL https://gist.githubusercontent.com/adamalex/fae88b74a3f931ff2b5fa73a89108af0/raw/toolbox-bootstrap.sh)"'
+
+echo "toolbox configuration saved on all cluster hosts"
+echo "exit now and rerun 'toolbox' to use the latest version"

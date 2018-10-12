@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+cat << 'EOF' | slex-all
+(
+  sudo systemctl stop update-engine
+  sudo systemctl mask update-engine.service
+  sudo systemctl stop locksmithd
+  sudo systemctl mask locksmithd.service
+  sudo systemctl daemon-reload
+)
+EOF

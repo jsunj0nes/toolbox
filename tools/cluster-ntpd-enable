@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+ntpd_hostname=${1:-}
+user=$(grep -m 1 -oPe '[.\w]+(?=-sfmc-docker)' /etc/mtab)
+
+if [ -z "$ntpd_hostname" ]; then
+  echo "usage: $0 ntpd_hostname" >&2
+  exit 1
+fi
+
+cat > ntp.conf << EOM
+server $ntpd_hostname
+
+restrict default nomodify nopeer noquery limited kod
+restrict 127.0.0.1
+restrict [::1]
+EOM
+
+args-all -i scp ./ntp.conf $user@{}:.
+rm ntp.conf
+
+cat << 'EOF' | slex-all
+(
+  sudo cp --remove-destination ntp.conf /etc/ntp.conf
+  sudo systemctl stop systemd-timesyncd
+  sudo systemctl mask systemd-timesyncd
+  sudo systemctl enable ntpd
+  sudo systemctl restart ntpd
+)
+EOF

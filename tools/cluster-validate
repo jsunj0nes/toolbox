@@ -1,0 +1,83 @@
+#!/usr/bin/env bats
+
+cluster_name=$(jyparser /media/root/etc/kubernetes/kubeconfig get -r ".clusters[0].name")
+loadbalancer_count="$(args-loadbalancers echo | wc -l)"
+controller_count="$(args-controllers echo | wc -l)"
+bastion_count="$(args-bastions echo | wc -l)"
+worker_count="$(args-workers echo | wc -l)"
+
+if [ -f ~/inventory/hosts-master ]; then controller_role="master"; else controller_role="controller"; fi
+
+@test "cluster: kube-dns is configured for all controllers" {
+  deployment="$(kubectl get deployment kube-dns -n kube-system -o json)"
+  configured_replicas="$(jyparser get -r ".spec.replicas" <<< $deployment)"
+  node_selector="$(jyparser get -r ".spec.template.spec.nodeSelector | keys | first" <<< $deployment)"
+  [ "$configured_replicas" -eq "$controller_count" ]
+  [ "$node_selector" = "node-role.kubernetes.io/$controller_role" ]
+}
+
+@test "cluster: servers are tagged with failure domain data" {
+  while read -r name labels; do
+    server_suffix=$(echo $name | grep -oPe '\d+$')
+    server_number=$((10#$server_suffix))
+    if [ $((server_number%2)) -eq 0 ]; then zone="even"; else zone="odd"; fi
+    region_tag="failure-domain.beta.kubernetes.io/region=$cluster_name"
+    zone_tag="failure-domain.beta.kubernetes.io/zone=$zone"
+    echo $labels | grep "$region_tag" | grep "$zone_tag"
+  done <<< "$(args-all -i basename {} .$(hostname -d) | xargs -n 1 -i kubectl get node {} --no-headers --show-labels | awk '{ print $1 "\t" $6 }')"
+}
+
+@test "controllers: apiservers connect to etcd via localhost" {
+  configured_hosts="$(slex-controllers cat /etc/kubernetes/manifests/kube-apiserver.yaml 2>/dev/null | grep -- '--etcd-servers=https://127.0.0.1' | wc -l)"
+  [ "$configured_hosts" -eq "$controller_count" ]
+}
+
+@test "controllers: kubeconfig connects to apiserver via local hostname (not .local dns)" {
+  misconfigured_hosts="$(slex-controllers cat /etc/kubernetes/kubeconfig 2>/dev/null | grep 'server' | grep .local | wc -l)"
+  [ "$misconfigured_hosts" -eq "0" ]
+}
+
+@test "workers: local haproxy is managed by kubelet" {
+  misconfigured_hosts="$(slex-workers ls /etc/kubernetes/manifests/local-api-proxy.yaml 2>/dev/null | grep "cannot access" | wc -l)"
+  [ "$misconfigured_hosts" -eq "0" ]
+}
+
+@test "workers: hosts entry for kubernetes exists" {
+  configured_hosts="$(slex-workers cat /etc/hosts 2>/dev/null | grep -- 'kubernetes' | wc -l)"
+  [ "$configured_hosts" -eq "$worker_count" ]
+}
+
+@test "workers: kubeconfig connects to apiservers via local haproxy" {
+  configured_hosts="$(slex-workers cat /etc/kubernetes/kubeconfig 2>/dev/null | grep 'server' | grep 'kubernetes' | wc -l)"
+  [ "$configured_hosts" -eq "$worker_count" ]
+}
+
+@test "loadbalancers: local haproxy is managed by kubelet" {
+  misconfigured_hosts="$(slex-loadbalancers ls /etc/kubernetes/manifests/local-api-proxy.yaml 2>/dev/null | grep "cannot access" | wc -l)"
+  [ "$misconfigured_hosts" -eq "0" ]
+}
+
+@test "loadbalancers: hosts entry for kubernetes exists" {
+  configured_hosts="$(slex-loadbalancers cat /etc/hosts 2>/dev/null | grep -- 'kubernetes' | wc -l)"
+  [ "$configured_hosts" -eq "$loadbalancer_count" ]
+}
+
+@test "loadbalancers: kubeconfig connects to apiservers via local haproxy" {
+  configured_hosts="$(slex-loadbalancers cat /etc/kubernetes/kubeconfig 2>/dev/null | grep 'server' | grep 'kubernetes' | wc -l)"
+  [ "$configured_hosts" -eq "$loadbalancer_count" ]
+}
+
+@test "bastions: local haproxy is managed by kubelet" {
+  misconfigured_hosts="$(slex-bastions ls /etc/kubernetes/manifests/local-api-proxy.yaml 2>/dev/null | grep "cannot access" | wc -l)"
+  [ "$misconfigured_hosts" -eq "0" ]
+}
+
+@test "bastions: hosts entry for kubernetes exists" {
+  configured_hosts="$(slex-bastions cat /etc/hosts 2>/dev/null | grep -- 'kubernetes' | wc -l)"
+  [ "$configured_hosts" -eq "$bastion_count" ]
+}
+
+@test "bastions: kubeconfig connects to apiservers via local haproxy" {
+  configured_hosts="$(slex-bastions cat /etc/kubernetes/kubeconfig 2>/dev/null | grep 'server' | grep 'kubernetes' | wc -l)"
+  [ "$configured_hosts" -eq "$bastion_count" ]
+}

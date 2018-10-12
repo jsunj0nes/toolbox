@@ -1,0 +1,29 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+declare -a nodes
+account=$(grep -m 1 -oPe '[.\w]+(?=-sfmc-docker)' /etc/mtab)
+
+#get cmd line arguments
+  while [[ "$#" -gt 0 ]]; do case $1 in
+    -u|--user) user="$2"; shift;;
+    -n|--nodes) knodes="$2"; shift;;
+    *) echo "Unknown parameter passed: $1"; exit 1;;
+  esac; shift; done
+
+#test arguments
+  if [ -z "${user+xxx}" ]; then echo "user not specified (use -u) "; exit; fi
+  if [ -z "${knodes+xxx}" ]; then echo "nodes not specified (ex: -n all or -n bastions)"; exit; fi
+
+nodelist=$("args-$knodes")
+nodes=("$nodelist")
+
+removeuser="sudo userdel -r $user"
+
+#Loop through nodes and remove user
+  for n in ${nodes[@]}
+    do
+      echo "$n"
+      ssh $account@"$n" "$removeuser" || true
+  done

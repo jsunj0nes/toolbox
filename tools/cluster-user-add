@@ -1,0 +1,45 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+declare -a nodes
+account=$(grep -m 1 -oPe '[.\w]+(?=-sfmc-docker)' /etc/mtab)i
+
+#get cmd line arguments
+  while [[ "$#" -gt 0 ]]; do case $1 in
+    -u|--user) user="$2"; shift;;
+    -f|--publickey) publickey="$2"; shift;;
+    -n|--nodes) knodes="$2"; shift;;
+    *) echo "Unknown parameter passed: $1"; exit 1;;
+  esac; shift; done
+
+#test command line arguments
+  if [ -z "${user+xxx}" ]; then echo "user not specified (use -u) "; exit; fi
+  if [ -z "${publickey+xxx}" ]; then echo "public key file not provided (use -f)"; exit; fi
+  if [ -z "${knodes+xxx}" ]; then echo "nodes not specified (ex: -n all or -n bastions)"; exit; fi
+
+nodelist=$(args-"$knodes")
+nodes=("$nodelist")
+
+#setup commands to run on node
+  sshkey=$(cat "$publickey")
+  adduser="sudo useradd $user"
+  addtogroup="sudo usermod -aG sudo $user"
+  cptoolboxrc="sudo cp .toolboxrc /home/$user/; sudo chown $user:$user /home/$user/.toolboxrc"
+  sshkeydir="sudo -i -u $user mkdir /home/$user/.ssh/authorized_keys.d"
+  sshkeyfile="echo $sshkey | sudo -i -u $user tee /home/$user/.ssh/authorized_keys.d/$user > /dev/null"
+  sshkeyupdate="sudo -i -u $user update-ssh-keys"
+
+#Loop through nodes and create user/apply sshpubkey
+  for n in ${nodes[@]}
+    do
+      echo "$n"
+      ssh $account@"$n" /bin/bash << EOF
+        $adduser;
+        $addtogroup;
+        $cptoolboxrc;
+        $sshkeydir;
+        $sshkeyfile;
+        $sshkeyupdate
+EOF
+  done

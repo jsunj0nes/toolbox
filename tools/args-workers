@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+if [[ -e ~/inventory/hosts-node ]]; then
+  file=~/inventory/hosts-node
+else
+  file=~/inventory/hosts-worker
+fi
+
+< $file xargs --max-args=1 --max-procs=32 $@
