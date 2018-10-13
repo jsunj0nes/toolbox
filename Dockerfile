@@ -4,13 +4,13 @@ WORKDIR /root
 RUN rm *
 
 ENV HELM_VERSION v2.9.1
-ENV KUBECTL_VERSION v1.10.3
+ENV KUBECTL_VERSION v1.10.7
 ENV DOCKER_VERSION 18.05.0
 
 ENV GOBIN /usr/local/bin
 ENV GOPATH /opt/go
 
-RUN dnf --refresh --assumeyes install bats file findutils git golang gpg hostname iputils jq make nmap-ncat procps psmisc sysstat telnet which
+RUN dnf --refresh --assumeyes install bats file findutils git golang gpg hostname iputils jq make nmap-ncat procps psmisc sysstat telnet which bind-utils tcpdump
 RUN go get github.com/crosbymichael/slex
 RUN pip install pyyaml
 
