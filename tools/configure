@@ -1,0 +1,125 @@
+#!/bin/bash
+#shellcheck disable=SC2009
+set -euo pipefail
+IFS=$'\n\t'
+
+function echo_step() {
+  echo -n "$1... "
+}
+
+HOST_ROOT=/media/root
+INVENTORY_DIR=~/inventory
+DEST_KUBECONFIG_DIR=~/.kube
+DEST_KUBECONFIG=$DEST_KUBECONFIG_DIR/config
+SOURCE_KUBECONFIG=$HOST_ROOT/etc/kubernetes/kubeconfig
+user=$(grep -m 1 -oPe '[.\w]+(?=-index.docker.io_jsunjones_toolbox)' /etc/mtab)
+server="kubernetes:6443"
+
+[[ -e $HOST_ROOT/etc/hosts ]] && cp $HOST_ROOT/etc/hosts /etc/hosts
+
+echo_step "detecting ssh agent"
+socket=$(find "/media/root/tmp" -wholename "*/ssh-*/agent.*" -printf '%T+\t%p\n' | sort -r | head -n 1 | awk '{print $2}')
+if [[ -e $socket ]]; then
+  ln -sf "$socket" ~/.ssh.agent.sock
+  echo "found"
+else
+  echo "NOT FOUND"
+fi
+
+echo_step "detecting host docker daemon"
+socket=/media/root/var/run/docker.sock
+if [[ -e $socket ]]; then
+  if [[ ! -e $socket ]]; then
+    ln -s $socket /var/run/docker.sock
+  fi
+  echo "found"
+else
+  echo "NOT FOUND"
+fi
+
+echo_step "checking for kubectl configuration"
+if [[ -e $DEST_KUBECONFIG ]]; then
+  echo "found"
+else
+  echo "not found"
+  echo_step "kubeconfig: detecting cluster name"
+  cluster_name=$(jyparser $SOURCE_KUBECONFIG get -r ".clusters[0].name")
+  echo "$cluster_name"
+  if [ "$user" = "core" ]; then
+      mkdir -p $DEST_KUBECONFIG_DIR
+      cp $SOURCE_KUBECONFIG $DEST_KUBECONFIG
+      jyparser $DEST_KUBECONFIG set ".contexts[0].name" '"'"$cluster_name"'"' > $DEST_KUBECONFIG.tmp
+      mv $DEST_KUBECONFIG.tmp $DEST_KUBECONFIG
+      echo "current-context: $cluster_name" >> $DEST_KUBECONFIG
+  else
+    echo_step "kubeconfig: detecting user info"
+      # Get User Token
+        secret=$(kubectl get secrets --all-namespaces --kubeconfig $SOURCE_KUBECONFIG | grep "$user")
+        secretname=$(echo "$secret" | tr -s ' ' | cut -f2 -d ' ')
+        namespace=$(echo "$secret" | cut -f1 -d ' ')
+        token=$(kubectl describe secret "$secretname" -n "$namespace" --kubeconfig $SOURCE_KUBECONFIG | grep 'token:' | tr -s ' ' | cut -f2 -d ' ')
+      # Get Cert Authority Token
+        cad=$(grep 'certificate-authority-data:' $SOURCE_KUBECONFIG)
+    echo_step "kubeconfig: writing kubectl configuration"
+      mkdir -p $DEST_KUBECONFIG_DIR
+
+cat >$DEST_KUBECONFIG <<EOF
+apiVersion: v1
+clusters:
+- cluster:
+$cad
+    server: https://$server
+  name: $cluster_name
+contexts:
+- context:
+    cluster: $cluster_name
+    namespace: $namespace
+    user: $user
+  name: $cluster_name
+current-context: $cluster_name
+kind: Config
+preferences: {}
+users:
+- name: $user
+  user:
+    as-user-extra: {}
+    token: $token
+EOF
+
+  echo "done"
+  fi
+fi
+
+echo_step "checking for cluster host inventory"
+if [[ -d $INVENTORY_DIR ]]; then
+  echo "found"
+else
+  echo "not found"
+  mkdir -p $INVENTORY_DIR
+  echo_step "inventory: detecting dns domain"
+  dns_domain=$(hostname -d)
+  echo "$dns_domain"
+
+  echo "inventory: writing cluster host inventory"
+  while read -r name role; do
+    fqdn="$name.$dns_domain"
+    echo_step "inventory: checking $role $fqdn"
+    if nc -z -w 1s "$fqdn" 22 &> /dev/null; then
+      echo "$fqdn" >> "$INVENTORY_DIR/hosts-all"
+      echo "$fqdn" >> "$INVENTORY_DIR/hosts-$role"
+      echo "up"
+    else
+      echo "DOWN"
+    fi
+  done <<< "$(kubectl get nodes | awk '{if (NR!=1) { print $1 "\t" $3 }}')"
+
+  echo_step "inventory: capturing ssh host keys for cluster hosts"
+  mkdir -p ~/.ssh
+  args-all ssh-keyscan > ~/.ssh/known_hosts 2> /dev/null
+  args-all -i ssh $user@{} true &> /dev/null
+  echo "done"
+
+  echo "cluster host inventory written"
+fi
+
+echo "toolbox configuration is complete"
